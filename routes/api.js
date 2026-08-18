@@ -268,80 +268,92 @@ router.put('/admin/orders/:id', requireAdmin, async (req, res) => {
   }
 })
 
-// Generate Invoice PDF
-router.get('/admin/orders/:id/invoice', requireAdmin, async (req, res) => {
-  const { id } = req.params
+// Helper to generate Invoice PDF
+const generateInvoicePDF = async (orderId, res) => {
+  const order = await prisma.order.findUnique({
+    where: { id: parseInt(orderId) },
+    include: { items: { include: { product: true } } }
+  })
+  if (!order) return res.status(404).json({ error: 'Order not found' })
+
+  const doc = new PDFDocument({ margin: 50 })
+  res.setHeader('Content-disposition', `attachment; filename="Invoice-Maharaja-Order-${order.id}.pdf"`)
+  res.setHeader('Content-type', 'application/pdf')
+  doc.pipe(res)
+
+  // Header
+  doc.fontSize(24).font('Helvetica-Bold').text('Maharaja Nuts & More', { align: 'center' })
+  doc.fontSize(10).font('Helvetica').fillColor('gray').text('Health & Happiness in Each Bite', { align: 'center' })
+  doc.moveDown(2)
+  
+  // Invoice details
+  doc.fillColor('black').fontSize(16).font('Helvetica-Bold').text('INVOICE', { underline: true })
+  doc.fontSize(10).font('Helvetica').text(`Order ID: #${order.id}`)
+  doc.text(`Date: ${order.createdAt.toISOString().split('T')[0]}`)
+  doc.text(`Status: ${order.status}`)
+  doc.moveDown()
+  
+  // Customer Info
+  doc.fontSize(12).font('Helvetica-Bold').text('Billed To:')
+  doc.fontSize(10).font('Helvetica')
+  doc.text(`Name: ${order.customerName || 'N/A'}`)
+  doc.text(`Phone: ${order.customerPhone || 'N/A'}`)
+  doc.text(`Address: ${order.customerAddress || 'N/A'}`)
+  doc.moveDown(2)
+  
+  // Items table header
+  const tableTop = 330
+  doc.font('Helvetica-Bold')
+  doc.text('Item Description', 50, tableTop, { width: 250 })
+  doc.text('Qty', 300, tableTop, { width: 50, align: 'center' })
+  doc.text('Price (Rs)', 350, tableTop, { width: 80, align: 'right' })
+  doc.text('Total (Rs)', 450, tableTop, { width: 80, align: 'right' })
+  doc.moveDown(0.5)
+  
+  doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke()
+  doc.moveDown(0.5)
+
+  // Items
+  doc.font('Helvetica')
+  let y = doc.y
+  order.items.forEach(item => {
+    doc.text(item.product.name, 50, y, { width: 250 })
+    doc.text(item.quantity.toString(), 300, y, { width: 50, align: 'center' })
+    doc.text(item.price.toLocaleString('en-IN'), 350, y, { width: 80, align: 'right' })
+    doc.text((item.price * item.quantity).toLocaleString('en-IN'), 450, y, { width: 80, align: 'right' })
+    y += 20
+  })
+  
+  doc.y = y
+  doc.moveDown()
+  doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke()
+  doc.moveDown(1)
+  
+  // Total
+  doc.fontSize(14).font('Helvetica-Bold').text(`Total Amount: Rs. ${order.totalAmount.toLocaleString('en-IN')}`, 350, doc.y, { align: 'right', width: 180 })
+  
+  // Footer
+  doc.moveDown(4)
+  doc.fontSize(10).font('Helvetica').fillColor('gray').text('Thank you for shopping with Maharaja Nuts & More!', { align: 'center' })
+
+  doc.end()
+}
+
+// Public Customer Invoice PDF
+router.get('/orders/:id/invoice', async (req, res) => {
   try {
-    const order = await prisma.order.findUnique({
-      where: { id: parseInt(id) },
-      include: { items: { include: { product: true } } }
-    })
-    if (!order) return res.status(404).json({ error: 'Order not found' })
-
-    const doc = new PDFDocument({ margin: 50 })
-    res.setHeader('Content-disposition', `attachment; filename="Invoice-Maharaja-Order-${order.id}.pdf"`)
-    res.setHeader('Content-type', 'application/pdf')
-    doc.pipe(res)
-
-    // Header
-    doc.fontSize(24).font('Helvetica-Bold').text('Maharaja Nuts & More', { align: 'center' })
-    doc.fontSize(10).font('Helvetica').fillColor('gray').text('Health & Happiness in Each Bite', { align: 'center' })
-    doc.moveDown(2)
-    
-    // Invoice details
-    doc.fillColor('black').fontSize(16).font('Helvetica-Bold').text('INVOICE', { underline: true })
-    doc.fontSize(10).font('Helvetica').text(`Order ID: #${order.id}`)
-    doc.text(`Date: ${order.createdAt.toISOString().split('T')[0]}`)
-    doc.text(`Status: ${order.status}`)
-    doc.moveDown()
-    
-    // Customer Info
-    doc.fontSize(12).font('Helvetica-Bold').text('Billed To:')
-    doc.fontSize(10).font('Helvetica')
-    doc.text(`Name: ${order.customerName || 'N/A'}`)
-    doc.text(`Phone: ${order.customerPhone || 'N/A'}`)
-    doc.text(`Address: ${order.customerAddress || 'N/A'}`)
-    doc.moveDown(2)
-    
-    // Items table header
-    const tableTop = 330
-    doc.font('Helvetica-Bold')
-    doc.text('Item Description', 50, tableTop, { width: 250 })
-    doc.text('Qty', 300, tableTop, { width: 50, align: 'center' })
-    doc.text('Price (Rs)', 350, tableTop, { width: 80, align: 'right' })
-    doc.text('Total (Rs)', 450, tableTop, { width: 80, align: 'right' })
-    doc.moveDown(0.5)
-    
-    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke()
-    doc.moveDown(0.5)
-
-    // Items
-    doc.font('Helvetica')
-    let y = doc.y
-    order.items.forEach(item => {
-      doc.text(item.product.name, 50, y, { width: 250 })
-      doc.text(item.quantity.toString(), 300, y, { width: 50, align: 'center' })
-      doc.text(item.price.toLocaleString('en-IN'), 350, y, { width: 80, align: 'right' })
-      doc.text((item.price * item.quantity).toLocaleString('en-IN'), 450, y, { width: 80, align: 'right' })
-      y += 20
-    })
-    
-    doc.y = y
-    doc.moveDown()
-    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke()
-    doc.moveDown(1)
-    
-    // Total
-    doc.fontSize(14).font('Helvetica-Bold').text(`Total Amount: Rs. ${order.totalAmount.toLocaleString('en-IN')}`, 350, doc.y, { align: 'right', width: 180 })
-    
-    // Footer
-    doc.moveDown(4)
-    doc.fontSize(10).font('Helvetica').fillColor('gray').text('Thank you for shopping with Maharaja Nuts & More!', { align: 'center' })
-
-    doc.end()
+    await generateInvoicePDF(req.params.id, res)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
+// Admin Generate Invoice PDF
+router.get('/admin/orders/:id/invoice', requireAdmin, async (req, res) => {
+  try {
+    await generateInvoicePDF(req.params.id, res)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
 module.exports = router

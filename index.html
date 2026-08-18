@@ -1363,6 +1363,15 @@
         msg += `\n*Total: ₹${cartTotal().toLocaleString('en-IN')}*`;
         const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(msg)}`;
 
+        // Trigger PDF Invoice Download
+        const invoiceUrl = `/api/orders/${data.order.id}/invoice`;
+        const downloadLink = document.createElement('a');
+        downloadLink.href = invoiceUrl;
+        downloadLink.download = `Invoice-Maharaja-Order-${data.order.id}.pdf`;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+
         // Clear cart & form
         Object.keys(cart).forEach(k => delete cart[k]);
         document.getElementById('custName').value = '';
@@ -1371,6 +1380,7 @@
         updateCartUI();
         closeDrawer();
 
+        // Redirect to WhatsApp
         window.open(url, "_blank");
       } catch (err) {
         showFieldErr('errOrder', 'Unable to place order. Please check your connection and try again.');
